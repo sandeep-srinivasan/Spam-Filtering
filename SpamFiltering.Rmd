@@ -1,0 +1,439 @@
+---
+title: "STAT 6500: Spam Filtering"
+author: "Comparison of Classification Methods"
+output:
+  pdf_document: default
+fontsize: 12pt
+---
+
+The spam data set consists of information from 4601 email messages. The data set was generated in 1999 and donated by George Forman from HP Labs, CA. It is available at the UCI Machine Learning Repository
+(https://archive.ics.uci.edu/ml/datasets/Spambase). The response is either regular email (60.6%) or spam (39.4%). There are 57 predictors: 48 predictors are 
+the percentage of words in the email that match a given word
+(e.g. business, address, free), 6 predictors are the percentage 
+of punctuation marks in the email that match a given punctuation mark
+(e.g. !, $), and additional three predictors are the average length of uninterrupted sequences of
+capital letters (CapAve), the length of the longest uninterrupted sequence
+of capital letters (CapMax), and the sum of the length of uninterrupted sequences
+of capital letters (CapTotal).
+
+We use the \texttt{spam} data set available in the R package \texttt{kernlab} and classify emails 
+using logistic regression, LDA, QDA, and $k$-NN. 
+
+#### Data Loading 
+
+```{r warning=FALSE}
+# install.packages("kernlab") 
+library(kernlab)  
+
+# load spam data
+data(spam)
+
+# check the data dimension
+dim(spam)
+
+# see the variable names
+names(spam)
+
+# structure of the data
+str(spam)
+
+# distribution of the response
+table(spam$type)
+table(spam$type)/nrow(spam)
+```
+
+\newpage
+
+#### Examining Predictors
+
+For illustration of the application of the classification methods in R, we look at a small subset of predictors. Focusing on the predictors on most commonly occurring words or punctuation marks, first we identify those words or characters with largest difference in the average percentage between spam and regular email.
+
+```{r}
+# average percentage for spam
+spam.mean <- colMeans(spam[spam$type=="spam", 1:54])
+
+# average percentage for regular email
+nonspam.mean <- colMeans(spam[spam$type=="nonspam", 1:54])
+
+# difference between them
+diff.mean <- spam.mean - nonspam.mean
+
+# sort the percentage differeces
+round(sort(diff.mean), digits = 4)
+```
+
+```{r, fig.width=6, fig.height=5, fig.align="center"}
+# visualize the differences
+plot(sort(diff.mean), xlab = "", ylab = "spam-nonspam", 
+     main = "Difference in average percentage")
+abline(h=0, lty=2)
+```
+
+We will consider the predictors \texttt{george}, \texttt{hp}, \texttt{you}, \texttt{free}, and \texttt{remove} in the following analysis.  
+
+
+```{r}
+par(mfrow=c(1,5))
+boxplot(george ~ type, main = "george", data = spam)
+boxplot(hp ~ type, main = "hp", data = spam)
+boxplot(you ~ type, main = "you", data = spam)
+boxplot(free ~ type, main = "free", data = spam)
+boxplot(remove ~ type, main = "remove", data = spam)
+```
+
+```{r, echo=F, eval=F}
+pairs( ~george+hp+you+free+remove, col = ifelse(spam$type=="spam", 1, 2), pch = 1, data=spam)
+```
+
+#### Splitting Data into Training and Test Sets
+
+We split the data into training data of size 1,000 and test data of 3,601.
+
+```{r}
+set.seed(1)
+# randomly select 1000 emails for training
+train <- sample(1:nrow(spam), 1000)
+test <- (1:4601)[-train]
+
+# distribution of the training responses
+table(spam$type[train])
+
+# define the training and test response vectors
+train.y <- spam$type[train]
+test.y <- spam$type[test]
+```
+
+\newpage
+
+## Logistic Regression
+
+Using the five variables, we fit a logistic regression model. Note that the response variable \texttt{type} is a factor with two levels, "nonspam" and "spam", and the \texttt{glm()} function models the log odds of the second level (spam) versus the first level (nonspam) as a function of the predictors. 
+
+##### Model fitting
+```{r}
+model.fit <- glm(type ~ george + hp + you + free + remove, 
+               family = binomial, data = spam, subset = train)
+summary(model.fit)
+```
+
+\newpage
+Based on the estimated logistic regression model, we derive a classifier and assess its error rates over the training and test data.
+
+##### Training error rate
+
+```{r}
+# estimate posterior probabilities for training data
+spam.probs.tr <- fitted(model.fit)
+spam.probs.tr <- predict(model.fit, type = "response") 
+
+# classify based on the posterior probability
+pred.tr <- ifelse(spam.probs.tr > 0.5, "spam", "nonspam")
+
+# confusion matrix
+table(pred.tr, train.y)
+
+# training error rate
+mean(pred.tr != train.y)
+```
+
+##### Test error rate
+
+```{r}
+# estimate posterior probabilities for test data
+spam.probs <- predict(model.fit, newdata = spam[test,], type = "response")
+
+# classify based on the posterior probability
+pred.test <- ifelse(spam.probs > 0.5, "spam", "nonspam")
+
+# confusion matrix
+table(pred.test, test.y)
+
+# test error rate
+mean(pred.test != test.y)
+```
+
+\newpage
+## LDA
+
+The \texttt{lda()} function in the \texttt{MASS} library is used to carry out a linear discriminant analysis. 
+
+##### Model fitting
+```{r}
+library(MASS)
+lda.fit <- lda(type ~ george + hp + you + free + remove, 
+               data = spam, subset = train)
+lda.fit
+```
+
+The linear discriminant coefficients in the output determine the discriminant function, and with "spam" as the second level (or class 2) of the response variable \texttt{type}, high discriminant scores indicate spam emails.  
+
+
+##### Training error rate
+
+```{r}
+# prediction over training data
+lda.pred.tr <- predict(lda.fit)
+names(lda.pred.tr)
+lda.pred.tr$posterior[1:3,]
+```
+In the LDA prediction output, \texttt{class} contains the predicted class labels, \texttt{posterior} is a matrix of the posterior probabilities, and \texttt{x} contains the linear discriminant scores.
+
+```{r}
+# confusion matrix
+table(lda.pred.tr$class, train.y)
+
+# training error rate
+mean(lda.pred.tr$class != train.y)
+```
+The training error rate of LDA is higher than that of logistic regression.
+
+##### Test error rate
+
+```{r}
+# prediction for test data
+lda.pred <- predict(lda.fit, spam[test,])
+
+# confusion matrix
+table(lda.pred$class, test.y)
+
+# test error rate
+mean(lda.pred$class != test.y)
+```
+The test error rate of LDA is similar to the training error rate.
+
+\newpage
+
+## QDA
+A quadratic discriminant analysis is done using the \texttt{qda()} function in the \texttt{MASS} library.
+
+##### Model fitting
+```{r}
+qda.fit <- qda(type ~ george + hp + you + free + remove, 
+               data = spam, subset = train)
+qda.fit
+```
+
+##### Training error rate
+
+```{r}
+# prediction over training data
+qda.pred.tr <- predict(qda.fit)
+
+# confusion matrix
+table(qda.pred.tr$class, train.y)
+
+# training error rate
+mean(qda.pred.tr$class != train.y)
+```
+##### Test error rate
+
+```{r}
+# prediction for test data
+qda.pred <- predict(qda.fit, spam[test,])
+
+# confusion matrix
+table(qda.pred$class, test.y)
+
+# test error rate
+mean(qda.pred$class != test.y)
+```
+
+Due to the non-normality of the data, QDA has a much higher error rate than LDA and logistic regression.
+
+## $k$-Nearest Neighbor Method
+
+For $k$-nearest neighbors method, we use the \texttt{knn()} function in the \texttt{class} library. 
+
+```{r}
+library(class)
+
+# for reproducibility in case there are tied observations for nearest neighbors
+set.seed(2)
+
+# define the list of predictors 
+var.list <- c("george", "hp", "you", "free", "remove")
+
+# define X matrix for training and testing
+train.X <- spam[train, var.list]
+test.X <- spam[test, var.list]
+```
+
+#### 1-NN
+```{r}
+# prediction for test data 
+knn.pred <- knn(train.X, test.X, train.y, k = 1)
+
+# confusion matrix
+table(knn.pred, test.y)
+
+# test error rate of 1-NN
+mean(knn.pred != test.y)
+```
+
+#### 10-NN
+```{r}
+# prediction for test data 
+knn.pred.10 <- knn(train.X, test.X, train.y, k = 10)
+
+# test error rate of 10-NN
+mean(knn.pred.10 != test.y)
+```
+#### Varying the number of neighbors
+
+We could examine the effect of the number of neighbors $k$ on the test error rate by varying $k$ from 1 to, say, 100.
+
+```{r}
+kmax <- 100
+
+# initialize error rates to zero
+knn.train.error <- rep(0, kmax)
+knn.test.error <- rep(0, kmax)
+
+# vary k from 1 to kmax
+for (i in 1:kmax)
+ {
+  # prediction for training data
+  knn.pred.tr <- knn(train.X, train.X, train.y, k = i)
+  
+  # training error rate
+  knn.train.error[i] <- mean(knn.pred.tr != train.y)
+    
+  # prediction for test data 
+  knn.pred <- knn(train.X, test.X, train.y, k = i)
+  
+  # test error rate
+  knn.test.error[i] <- mean(knn.pred != test.y)
+}
+```
+
+We compare the training error rate with the test error rate as $k$ increases. 
+
+
+```{r}
+plot(1:kmax, knn.test.error, ylim = c(0, 0.25), pch = 20, 
+     xlab = "Number of neighbors", ylab = "Error rate")
+points(1:kmax, knn.train.error, pch = 20, col = 2)
+legend(70, 0.1, c("test error", "training error"), col = 1:2, pch = 20)
+```
+With a much smaller data dimension compared to the sample size, the test error rate of $k$-NN tends to increase with $k$.   
+
+Note that there are many cases with zero percentage for each of the five words in the training data, which explains why the training error rate for 1-NN is not zero.   
+
+
+```{r}
+# how many cases have zero percentage for all of the five words?
+table(rowSums(train.X) == 0)
+```
+
+
+
+#### $k$-NN with 54 predictors
+
+We consider all of the 54 predictors on the percentage of words or punctuation marks for $k$-NN.
+
+```{r}
+# include 54 predictors in X matrix
+train.X <- spam[train, 1:54]
+test.X <- spam[test, 1:54]
+  
+kmax <- 100
+
+# initialize error rates to zero
+knn.train.error <- rep(0, kmax)
+knn.test.error <- rep(0, kmax)
+
+# vary k from 1 to kmax
+for (i in 1:kmax)
+ {
+  # prediction for training data
+  knn.pred.tr <- knn(train.X, train.X, train.y, k = i)
+  
+  # training error rate
+  knn.train.error[i] <- mean(knn.pred.tr != train.y)
+    
+  # prediction for test data 
+  knn.pred <- knn(train.X, test.X, train.y, k = i)
+  
+  # test error rate
+  knn.test.error[i] <- mean(knn.pred != test.y)
+}
+```
+
+```{r echo=F}
+plot(1:kmax, knn.test.error, ylim = c(0, 0.20), pch = 20, 
+     xlab = "Number of neighbors", ylab = "Error rate")
+points(1:kmax, knn.train.error, pch = 20, col = 2)
+legend(70, 0.05, c("test error", "training error"), col = 1:2, pch = 20)
+```
+
+When we use all of the 54 predictors, overall there is a reduction in the test error rates of $k$-NN. Still, the 1-NN turns out to be the best with the error rate of `r knn.test.error[1]`.
+
+Do we see similar improvement with logistic regression, LDA and QDA using the additional predictors?
+
+\newpage
+
+```{r}
+# fit logistic regression model
+model.fit <- glm(type ~ . - capitalAve - capitalLong - capitalTotal, 
+                 family = binomial, data = spam, subset = train)
+
+# estimate posterior probabilities for test data
+spam.probs <- predict(model.fit, newdata = spam[test,], type = "response")
+
+# classify based on the posterior probability
+pred.test <- ifelse(spam.probs > 0.5, "spam", "nonspam")
+
+# test error rate
+mean(pred.test != test.y)
+```
+  
+  
+We could examine the importance of each predictor in the fitted logistic regression model through summary statistics of the estimated coefficients.   
+
+
+```{r}
+# extract statistics for estimated regression coefficients
+coef.summary <- summary(model.fit)$coefficients
+colnames(coef.summary)
+
+# order the predictors by their p-values
+round(coef.summary[order(coef.summary[,4]), ], digits = 4)
+```
+
+
+```{r}
+# LDA
+lda.fit <- lda(type ~ . - capitalAve - capitalLong - capitalTotal, 
+               data = spam, subset = train)
+
+# prediction for test data
+lda.pred <- predict(lda.fit, spam[test,])
+
+# test error rate
+mean(lda.pred$class != test.y)
+```
+The LDA also improves with more predictors, but logistic regression is still better than LDA.
+
+It turns out that the class-specific sample covariance matrices for the 54 predictors 
+are not full rank. 
+
+```{r eval=F, echo=F}
+# QDA
+qda.fit <- qda(type ~ . - capitalAve - capitalLong - capitalTotal, 
+               data = spam, subset = train)
+
+# prediction for test data
+qda.pred <- predict(qda.fit, spam[test,])
+
+# test error rate
+mean(qda.pred$class != test.y)
+```
+```{r}
+# find the rank of the sample covariance matrix for nonspam group
+qr(cov(subset(train.X, train.y=="nonspam")))$rank
+
+# find the rank of the sample covariance matrix for spam group
+qr(cov(subset(train.X, train.y=="spam")))$rank
+```
+
+Consequently, QDA cannot be applied. 
