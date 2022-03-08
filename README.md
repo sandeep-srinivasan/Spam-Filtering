@@ -1,5 +1,3 @@
-# Statistical-Machine-Learning
-
 # Spam Filtering
 
 Comparison of Classification Methods
