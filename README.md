@@ -81,3 +81,11 @@ The plot of error rate vs number of neighbors,
 
 ![image](https://user-images.githubusercontent.com/42225976/157142370-5b61344b-a0b7-4337-8903-2f701b851677.png)
 
+With a much smaller data dimension compared to the sample size, the test error rate of k-NN tends to increase with k. Note that there are many cases with zero percentage for each of the five words in the training data, which explains why the training error rate for 1-NN is not zero.
+
+# k-NN with 54 predictors
+Considering all of the 54 predictors on the percentage of words or punctuation marks for k-NN.
+
+![image](https://user-images.githubusercontent.com/42225976/157152248-b5e124fe-81b9-4ee1-a4cc-80d7530de213.png)
+
+When all of the 54 predictors are used, overall there is a reduction in the test error rates of k-NN. Still, the 1-NN turns out to be the best with the error rate of 0.1158012.
